@@ -73,7 +73,12 @@ int linearSearch(const int *arr, int const len, int const value ){
 void* thr_func(void *arg) {
     thread_data_t *data = (thread_data_t *) arg;
 
-   // pthread_mutex_lock(&cout_without_conflict_mutex);
+    /*
+     * cout is not thread safe. It's better to wrap
+     * it up with a mutex lock; however, if I do so
+     * it will slow down the speed of finding the key.
+     */
+    // pthread_mutex_lock(&cout_without_conflict_mutex);
     (linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread " << data->tid) :
     (cout << "");
     /*(cout << "\nKey wasn't found in thread " << data->tid);*/
@@ -93,15 +98,19 @@ void* thr_func_with_mutex(void *arg) {
     (cout << "");
     //(cout << "\nKey wasn't found in thread " << data->tid);
 
+    /*
+     * If the key has been found. Unlock the mutex lock
+     * and signal the main thread.
+     */
     if(flag==1){
         pthread_mutex_lock( &condition_mutex );
              pthread_cond_signal( &condition_cond );
         pthread_mutex_unlock( &condition_mutex );
     } else {
-        // in case if there is no key in the array
+        // in case if there is no key in the array [-1 was supplied]
         // lock a mutex
         // increase a counter
-        // if counter == number of threads -> value not found -> make a signal
+        // if counter == number of threads -> value not found in any of threads -> make a signal
         pthread_mutex_lock( &condition_mutex );
                 COUNTER++;
                 if(COUNTER == NUM_THREADS){
@@ -168,13 +177,28 @@ int main(int argc, char **argv)
 
     int VALUE_OF_KEY;
     if(argc < 3){
-        cerr << "Please enter | array size [int between 1 and 1 000 000 000 | number of threads  |\n index where the key will be found ";
+        cerr << "Please enter | array size [int between 1 and 100 000 000 | number of threads "
+                " |\n index where the key will be found ";
         return -1;
     }
 
     const int ARRAY_SIZE = atoi(argv[1]);
     NUM_THREADS = atoi(argv[2]);
     const int INDEX_OF_KEY =  atoi(argv[3]);
+
+    if(NUM_THREADS > ARRAY_SIZE){
+        fprintf(stderr, "error: too few elements for too many threads");
+        return EXIT_FAILURE;
+    }
+    if(INDEX_OF_KEY > ARRAY_SIZE){
+        fprintf(stderr, "error: index of key cannot be greater than the number of all elements in array");
+        return EXIT_FAILURE;
+    }
+    if(ARRAY_SIZE > 100000000){
+        fprintf(stderr, "error: the array size is too big");
+        return EXIT_FAILURE;
+    }
+
 
     int **indices;
     indices = (int**)(calloc((size_t)NUM_THREADS, sizeof(int*)));
@@ -199,12 +223,14 @@ int main(int argc, char **argv)
     /*
      * Get rif of duplicates
      */
-    cout << "\n******* GETING RID OF DUPLICATES ********\n";
+    cout << "\n******* GETTING RID OF DUPLICATES WHICH ARE LOCATED BEFORE THE KEY ********";
+    cout << "\n***************** ONLY FOR SEARCH WITH THE MAIN THREAD ********************";
+    cout << "\n************ FOR MULTITHREADED V. - DO CLEAN UP IN EACH SUB-ARRAY *********\n\n";
     cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
     << " duplicates of the key" <<  endl;
     getRidOfKeyDuplicates(arr, ARRAY_SIZE, INDEX_OF_KEY);
     cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY)) << " duplicates of the key" <<  endl;
-    cout << "*******************************************\n\n";
+    cout << "****************************************************************************\n\n";
 
     /*
      * ONE THREAD PART
@@ -218,8 +244,6 @@ int main(int argc, char **argv)
     /*
     * MULTIPLE THREADS BUSY WAITING
     */
-
-
 
     cout << "\n***** SEARCH WITH MULTIPLE THREADS - BUSY WAITING ******";
     int low;
@@ -254,7 +278,7 @@ int main(int argc, char **argv)
     /*
      * Go through each sub-array and get rid of
      * all duplicates, which might occur before the
-     * key supplied by a user.
+     * key.
      */
     if (INDEX_OF_KEY != -1){
         int numElementOneThread = ARRAY_SIZE / NUM_THREADS;
@@ -268,12 +292,11 @@ int main(int argc, char **argv)
     int rc;
     /*
      * create a thread_data_t argument array
-      */
+     */
     thread_data_t thr_data[NUM_THREADS];
     /*
      * create threads
      */
-
     setTime();
 
     if(NUM_THREADS <= ARRAY_SIZE){
@@ -351,19 +374,24 @@ int main(int argc, char **argv)
         cout << "Too many threads for too few elements";
     }
 
-    cout << "About to wait";
-
+    /*
+     * wait for condition_cond and unlock condition_mutex
+     */
     pthread_cond_wait( &condition_cond, &condition_mutex );
-   // pthread_mutex_unlock( &condition_mutex );
+    // pthread_mutex_unlock( &condition_mutex );
 
     /*
-     * block until all threads complete
-     * */
+     * Kill all threads after receiving the signal.
+     */
     for (int i = 0; i < NUM_THREADS; ++i) {
         pthread_cancel(thr[i]);
     }
     cout << "\nThe time spent without busy waiting "  << getTime() << endl;
-    cout << "\nCOUNTER : " << COUNTER;
+    /*
+     * Show the value of COUNTER only if -1 was supplied.
+     */
+    if(COUNTER == NUM_THREADS){
+        cout << "\nCOUNTER : " << COUNTER; }
 
     cout << "********************************************************\n\n";
 
