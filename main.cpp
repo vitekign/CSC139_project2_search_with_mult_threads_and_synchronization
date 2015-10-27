@@ -1,12 +1,7 @@
 #include <iostream>
 #include <sys/timeb.h>
 #include <random>
-#include <pthread.h>
-
 using namespace std;
-
-#define DEBUG_MODE 0
-
 
 int *arr;
 long gRefTime;
@@ -106,7 +101,7 @@ void* thr_func_with_mutex(void *arg) {
         // in case if there is no key in the array
         // lock a mutex
         // increase a counter
-        // if counter == number of threads -> make a signal
+        // if counter == number of threads -> value not found -> make a signal
         pthread_mutex_lock( &condition_mutex );
                 COUNTER++;
                 if(COUNTER == NUM_THREADS){
@@ -144,7 +139,7 @@ int findNumberOfIdenticalValues(int *arr, const int len, const int index){
     return counter;
 }
 
-void checkIndexForSearchWithoutThreads(int *arr, const int len, const int index){
+void getRidOfKeyDuplicates(int *arr, const int len, const int index){
     int i = 0;
     while(i < index){
         if(arr[i] == arr[index]){
@@ -187,24 +182,43 @@ int main(int argc, char **argv)
         indices[i] = (int*)calloc(2, sizeof(int));
     }
 
+    populateArrayWithRandomInt(arr, ARRAY_SIZE, 0, ARRAY_SIZE);
+    int VALUE_OF_KEY = arr[INDEX_OF_KEY];
+    if (INDEX_OF_KEY == -1){
+        VALUE_OF_KEY = 0;
+        replaceWithRandomVariable(arr,ARRAY_SIZE, VALUE_OF_KEY);
+    }
 
-    /**
+    cout << "\n*************** ARGUMENTS *****************\n";
+    cout << "number of elements\t\t" << ARRAY_SIZE;
+    cout << "\nnumber of threads\t\t" << NUM_THREADS;
+    cout << "\nindex of the key\t\t" << INDEX_OF_KEY << "\n";
+    cout << "*******************************************\n\n";
+
+    /*
+     * Get rif of duplicates
+     */
+    cout << "\n******* GETING RID OF DUPLICATES ********\n";
+    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, INDEX_OF_KEY))
+    << " duplicates of the key" <<  endl;
+    getRidOfKeyDuplicates(arr, ARRAY_SIZE, INDEX_OF_KEY);
+    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, INDEX_OF_KEY)) << " duplicates of the key" <<  endl;
+    cout << "*******************************************\n\n";
+
+    /*
      * ONE THREAD PART
      */
-    populateArrayWithRandomInt(arr, ARRAY_SIZE, 0, ARRAY_SIZE);
-    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, INDEX_OF_KEY)) << " number of identical values" <<  endl;
-    checkIndexForSearchWithoutThreads(arr, ARRAY_SIZE, INDEX_OF_KEY);
-    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, INDEX_OF_KEY)) << " number of identical values" <<  endl;
+    cout << "\n***** SEARCH WITH ONLY MAIN THREAD ******\n";
     setTime();
-    int VALUE_OF_KEY = arr[INDEX_OF_KEY];
-
     (linearSearch(arr, ARRAY_SIZE,VALUE_OF_KEY)) == 1 ? (cout << "Key was found") : (cout << "Key wasn't found");
-    cout << "\nThe time spent without multithreading is "  << getTime() << endl;
-
+    cout << "\nThe time spent without multithreading - "  << getTime() << endl;
+    cout << "*******************************************\n\n";
 
     /*
     * MULTIPLE THREADS BUSY WAITING
     */
+
+    cout << "\n***** SEARCH WITH MULTIPLE THREADS - BUSY WAITING ******";
     int low;
     int pivot = ARRAY_SIZE / NUM_THREADS;
     for (int i = 0, j = 1; i < NUM_THREADS; i++, j++) {
@@ -275,8 +289,8 @@ int main(int argc, char **argv)
     for (int i = 0; i < NUM_THREADS; ++i) {
         pthread_join(thr[i], NULL);
     }
-    cout << "\nThe time spent without multithreading is "  << getTime() << endl;
-
+    cout << "\nThe time spent with multithreading [BUSY WAITING] - "  << getTime() << endl;
+    cout << "********************************************************\n\n";
 
 
 
@@ -286,6 +300,7 @@ int main(int argc, char **argv)
     /*
     * MULTIPLE THREADS WITHOUT BUSY WAITING
     */
+    cout << "\n******* SEARCH WITH MULTIPLE THREADS - WITHOUT BUSY WAITING ******";
 
     setTime();
     //VALUE_OF_KEY = 0;
@@ -320,7 +335,7 @@ int main(int argc, char **argv)
         cout << "Too many threads for too few elements";
     }
 
-    cout << "\nAbout to wait";
+    cout << "About to wait";
 
     pthread_cond_wait( &condition_cond, &condition_mutex );
    // pthread_mutex_unlock( &condition_mutex );
@@ -333,6 +348,8 @@ int main(int argc, char **argv)
     }
     cout << "\nThe time spent without busy waiting "  << getTime() << endl;
     cout << "\nCOUNTER : " << COUNTER;
+
+    cout << "********************************************************\n\n";
 
 
 
