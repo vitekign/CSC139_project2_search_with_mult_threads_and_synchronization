@@ -127,11 +127,11 @@ void populateArrayWithRandomInt( int *&data,  const int len, int const low, int 
     }
 }
 
-int findNumberOfIdenticalValues(int *arr, const int len, const int index){
+int findNumberOfIdenticalValues(int *arr, const int len, const int value){
     int i = 0;
     int counter = 0;
-    while(i < index){
-        if(arr[i] == arr[index]){
+    while(i < len){
+        if(arr[i] == value){
             counter++;
         }
         i++;
@@ -166,7 +166,7 @@ void replaceWithRandomVariable(int *arr, const int len, const int value){
 int main(int argc, char **argv)
 {
 
-
+    int VALUE_OF_KEY;
     if(argc < 3){
         cerr << "Please enter | array size [int between 1 and 1 000 000 000 | number of threads  |\n index where the key will be found ";
         return -1;
@@ -183,10 +183,11 @@ int main(int argc, char **argv)
     }
 
     populateArrayWithRandomInt(arr, ARRAY_SIZE, 0, ARRAY_SIZE);
-    int VALUE_OF_KEY = arr[INDEX_OF_KEY];
     if (INDEX_OF_KEY == -1){
         VALUE_OF_KEY = 0;
         replaceWithRandomVariable(arr,ARRAY_SIZE, VALUE_OF_KEY);
+    } else {
+        VALUE_OF_KEY = arr[INDEX_OF_KEY];
     }
 
     cout << "\n*************** ARGUMENTS *****************\n";
@@ -199,10 +200,10 @@ int main(int argc, char **argv)
      * Get rif of duplicates
      */
     cout << "\n******* GETING RID OF DUPLICATES ********\n";
-    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, INDEX_OF_KEY))
+    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
     << " duplicates of the key" <<  endl;
     getRidOfKeyDuplicates(arr, ARRAY_SIZE, INDEX_OF_KEY);
-    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, INDEX_OF_KEY)) << " duplicates of the key" <<  endl;
+    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY)) << " duplicates of the key" <<  endl;
     cout << "*******************************************\n\n";
 
     /*
@@ -217,6 +218,8 @@ int main(int argc, char **argv)
     /*
     * MULTIPLE THREADS BUSY WAITING
     */
+
+
 
     cout << "\n***** SEARCH WITH MULTIPLE THREADS - BUSY WAITING ******";
     int low;
@@ -245,6 +248,19 @@ int main(int argc, char **argv)
              */
                 indices[i][0] = low;
                 indices[i][1] = pivot;
+        }
+    }
+
+    /*
+     * Go through each sub-array and get rid of
+     * all duplicates, which might occur before the
+     * key supplied by a user.
+     */
+    if (INDEX_OF_KEY != -1){
+        int numElementOneThread = ARRAY_SIZE / NUM_THREADS;
+        int INDEX_KEY_SUB_ARRAY = INDEX_OF_KEY % numElementOneThread;
+        for(int i = 0; i < NUM_THREADS; i++){
+            getRidOfKeyDuplicates(&arr[indices[i][0]], ARRAY_SIZE, INDEX_KEY_SUB_ARRAY);
         }
     }
 
