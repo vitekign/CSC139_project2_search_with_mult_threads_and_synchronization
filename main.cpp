@@ -5,12 +5,25 @@ using namespace std;
 
 int *arr;
 long gRefTime;
+int *found;
+int *done;
 
 pthread_mutex_t cout_without_conflict_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t condition_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  condition_cond  = PTHREAD_COND_INITIALIZER;
 int COUNTER = 0;
 int NUM_THREADS;
+
+
+enum {
+    NOT_FOUND,
+    FOUND
+};
+
+enum {
+    NOT_DONE,
+    DONE
+};
 
 typedef struct _thread_data_t {
     int tid;
@@ -86,6 +99,22 @@ void* thr_func(void *arg) {
 
 }
 
+
+
+void* thr_func_real_busy_waiting(void *arg) {
+    thread_data_t *data = (thread_data_t *) arg;
+
+    int success;
+    (success = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread " << data->tid) :
+    (cout << "");
+
+    if(success){
+        found[data->tid] = DONE;
+    } else {
+        done[data->tid] = FOUND;
+    }
+
+}
 
 void* thr_func_with_mutex(void *arg) {
 
@@ -205,6 +234,9 @@ int main(int argc, char **argv)
     for(int i = 0; i<NUM_THREADS; i++){
         indices[i] = (int*)calloc(2, sizeof(int));
     }
+    done = (int*)(calloc((size_t)NUM_THREADS, sizeof(int)));
+    found = (int*)(calloc((size_t)NUM_THREADS, sizeof(int)));
+
 
     populateArrayWithRandomInt(arr, ARRAY_SIZE, 0, ARRAY_SIZE);
     if (INDEX_OF_KEY == -1){
@@ -330,6 +362,80 @@ int main(int argc, char **argv)
     }
     cout << "\nThe time spent with multithreading [BUSY WAITING] - "  << getTime() << endl;
     cout << "********************************************************\n\n";
+
+
+
+
+
+
+
+
+  /*
+  * MULTIPLE THREADS REAL BUSY WAITING!!!
+  */
+    setTime();
+
+    if(NUM_THREADS <= ARRAY_SIZE){
+        for(int i = 0; i < NUM_THREADS; i++){
+
+            thr_data[i].low = indices[i][0];
+            thr_data[i].high = indices[i][1];
+            thr_data[i].value = VALUE_OF_KEY;
+
+
+            thr_data[i].tid = i;
+            /* --Signature of the function--
+             *
+             * int pthread_create(pthread_t *thread, pthread_attr_t *attr,
+                       void *(*start_routine)(void *), void *arg);
+             */
+            rc = pthread_create(&thr[i], NULL, thr_func_real_busy_waiting, &thr_data[i]);
+            if(rc > 0){
+                fprintf(stderr, "error: pthread_create, rc: %d\n", rc);
+                return EXIT_FAILURE;
+            }
+        }
+    }else {
+        cout << "Too many threads for too few elements";
+    }
+
+    /*
+     * block until all threads complete
+     * */
+    while(true){
+        for(int i = 0; i < NUM_THREADS; i++){
+            if(found[i] == FOUND){
+                break;
+            }
+        }
+        for(int i = 0; i < NUM_THREADS; i++){
+            int numDone = 0;
+            if(done[i] == DONE){
+                numDone++;
+            }
+            if(numDone == NUM_THREADS){
+                break;
+            }
+        }
+    }
+
+    for (int i = 0; i < NUM_THREADS; ++i) {
+        pthread_join(thr[i], NULL);
+    }
+    cout << "\nThe time spent with multithreading [BUSY WAITING] - "  << getTime() << endl;
+    cout << "********************************************************\n\n";
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
