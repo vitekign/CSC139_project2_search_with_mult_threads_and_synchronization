@@ -109,9 +109,9 @@ void* thr_func_real_busy_waiting(void *arg) {
     (cout << "");
 
     if(success){
-        found[data->tid] = DONE;
+        found[data->tid] = FOUND;
     } else {
-        done[data->tid] = FOUND;
+        done[data->tid] = DONE;
     }
 
 }
@@ -373,6 +373,8 @@ int main(int argc, char **argv)
   /*
   * MULTIPLE THREADS REAL BUSY WAITING!!!
   */
+
+    cout << "\n***** SEARCH WITH MULTIPLE THREADS - REAL BUSY WAITING ******";
     setTime();
 
     if(NUM_THREADS <= ARRAY_SIZE){
@@ -401,28 +403,40 @@ int main(int argc, char **argv)
 
     /*
      * block until all threads complete
+     * incorporate it into a function and then return instead of breaking
      * */
-    while(true){
+    int counterDone = 0;
+    int flag = true;
+    while(flag){
         for(int i = 0; i < NUM_THREADS; i++){
             if(found[i] == FOUND){
+                flag = false;
                 break;
             }
         }
         for(int i = 0; i < NUM_THREADS; i++){
-            int numDone = 0;
             if(done[i] == DONE){
-                numDone++;
+                counterDone++;
             }
-            if(numDone == NUM_THREADS){
+            if(counterDone == NUM_THREADS){
+                flag = false;
                 break;
             }
         }
     }
 
-    for (int i = 0; i < NUM_THREADS; ++i) {
-        pthread_join(thr[i], NULL);
+
+    if (counterDone == NUM_THREADS){
+        for (int i = 0; i < NUM_THREADS; ++i) {
+            pthread_join(thr[i], NULL);
+        }
+    } else {
+        for (int i = 0; i < NUM_THREADS; ++i) {
+            pthread_cancel(thr[i]);
+        }
     }
-    cout << "\nThe time spent with multithreading [BUSY WAITING] - "  << getTime() << endl;
+
+    cout << "\nThe time spent with multithreading [REAL BUSY WAITING] - "  << getTime() << endl;
     cout << "********************************************************\n\n";
 
 
