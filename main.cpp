@@ -189,6 +189,18 @@ void getRidOfKeyDuplicates(int *arr, const int len, const int index){
     }
 }
 
+void getRidOfKeyDuplicatesInWholeArray(int *arr, const int len, const int indexOfKey){
+    int i = 0;
+    while(i < len){
+        if(arr[i] == arr[indexOfKey] && i != indexOfKey){
+            while(arr[i] == arr[indexOfKey]){
+                arr[i] = rand();
+            }
+        }
+        i++;
+    }
+}
+
 void replaceWithRandomVariable(int *arr, const int len, const int value){
     int i = 0;
     while(i < len){
@@ -246,38 +258,36 @@ int main(int argc, char **argv)
         VALUE_OF_KEY = arr[INDEX_OF_KEY];
     }
 
-    cout << "\n*************** ARGUMENTS *****************\n";
+    cout << "\n------------- ARGUMENTS -----------------\n";
     cout << "number of elements\t\t" << ARRAY_SIZE;
     cout << "\nnumber of threads\t\t" << NUM_THREADS;
     cout << "\nindex of the key\t\t" << INDEX_OF_KEY << "\n";
-    cout << "*******************************************\n\n";
+    cout << "-----------------------------------------\n\n";
 
     /*
      * Get rif of duplicates
      */
-    cout << "\n******* GETTING RID OF DUPLICATES WHICH ARE LOCATED BEFORE THE KEY ********";
-    cout << "\n***************** ONLY FOR SEARCH WITH THE MAIN THREAD ********************";
-    cout << "\n************ FOR MULTITHREADED V. - DO CLEAN UP IN EACH SUB-ARRAY *********\n\n";
-    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
-    << " duplicates of the key" <<  endl;
-    getRidOfKeyDuplicates(arr, ARRAY_SIZE, INDEX_OF_KEY);
-    cout << "There is " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY)) << " duplicates of the key" <<  endl;
-    cout << "****************************************************************************\n\n";
+    cout << "\n---------- GETTING RID OF KEY DUPLICATES ----------\n";
+    cout << "The value of the key appears in the array " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
+    << " time[s]" <<  endl;
+    getRidOfKeyDuplicatesInWholeArray(arr, ARRAY_SIZE, INDEX_OF_KEY);
+    cout << "The value of the key appears in the array " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
+    << " time[s]" <<  endl;
+    cout << "---------------------------------------------------\n\n";
 
     /*
      * ONE THREAD PART
      */
-    cout << "\n***** SEARCH WITH ONLY MAIN THREAD ******\n";
+    cout << "\n------ [1] SEARCH WITH ONLY MAIN THREAD -------\n";
     setTime();
     (linearSearch(arr, ARRAY_SIZE,VALUE_OF_KEY)) == 1 ? (cout << "Key was found") : (cout << "Key wasn't found");
-    cout << "\nThe time spent without multithreading - "  << getTime() << endl;
-    cout << "*******************************************\n\n";
+    cout << "\nThe time spent - "  << getTime() << endl;
+    cout << "-----------------------------------------------\n\n";
 
     /*
-    * MULTIPLE THREADS BUSY WAITING
+    * MULTIPLE THREADS - THE PARENT WAITS FOR ALL THREADS TO FINISH
     */
-
-    cout << "\n***** SEARCH WITH MULTIPLE THREADS - BUSY WAITING ******";
+    cout << "\n------ [2] MULT. THREADS - PARENT WAITS FOR ALL CHILDREN -------";
     int low;
     int pivot = ARRAY_SIZE / NUM_THREADS;
     for (int i = 0, j = 1; i < NUM_THREADS; i++, j++) {
@@ -312,6 +322,7 @@ int main(int argc, char **argv)
      * all duplicates, which might occur before the
      * key.
      */
+    /*
     if (INDEX_OF_KEY != -1){
         int numElementOneThread = ARRAY_SIZE / NUM_THREADS;
         int INDEX_KEY_SUB_ARRAY = INDEX_OF_KEY % numElementOneThread;
@@ -319,6 +330,7 @@ int main(int argc, char **argv)
             getRidOfKeyDuplicates(&arr[indices[i][0]], ARRAY_SIZE, INDEX_KEY_SUB_ARRAY);
         }
     }
+    */
 
     pthread_t thr[NUM_THREADS];
     int rc;
@@ -360,8 +372,8 @@ int main(int argc, char **argv)
     for (int i = 0; i < NUM_THREADS; ++i) {
         pthread_join(thr[i], NULL);
     }
-    cout << "\nThe time spent with multithreading [BUSY WAITING] - "  << getTime() << endl;
-    cout << "********************************************************\n\n";
+    cout << "\nThe time spent - "  << getTime() << endl;
+    cout << "----------------------------------------------------------------\n\n";
 
 
 
@@ -371,10 +383,13 @@ int main(int argc, char **argv)
 
 
   /*
-  * MULTIPLE THREADS REAL BUSY WAITING!!!
+  * 3. The parent keeps checking on the children in a busy waiting loop and
+   * terminates as soon as one child finds the key or if all children complete
+   * their search without finding the key
   */
 
-    cout << "\n***** SEARCH WITH MULTIPLE THREADS - REAL BUSY WAITING ******";
+
+    cout << "\n------ [3] MULT. THREADS - PARENT KEEPS CHEKCING - BUSY WAITING - NO SYNC. -------";
     setTime();
 
     if(NUM_THREADS <= ARRAY_SIZE){
@@ -436,8 +451,8 @@ int main(int argc, char **argv)
         }
     }
 
-    cout << "\nThe time spent with multithreading [REAL BUSY WAITING] - "  << getTime() << endl;
-    cout << "********************************************************\n\n";
+    cout << "\nThe time spent - "  << getTime() << endl;
+    cout << "----------------------------------------------------------------------------------\n\n";
 
 
 
@@ -457,13 +472,14 @@ int main(int argc, char **argv)
 
 
     /*
-    * MULTIPLE THREADS WITHOUT BUSY WAITING
+    * 4. The parent waits on a semaphore that gets signaled by one of the children
+     * either when that child finds the key or when all children have completed
+     * their search without finding the key.
     */
-    cout << "\n******* SEARCH WITH MULTIPLE THREADS - WITHOUT BUSY WAITING ******";
+    cout << "\n------ [4] MULT. THREADS WITH SYNCRONIZATION --------";
 
     setTime();
-    //VALUE_OF_KEY = 0;
-    //replaceWithRandomVariable(arr, ARRAY_SIZE, 0);
+
     /*
      * A lock must be used here in order to prevent the scenario
      * when one of the threads finishes its job and signals the
@@ -506,14 +522,14 @@ int main(int argc, char **argv)
     for (int i = 0; i < NUM_THREADS; ++i) {
         pthread_cancel(thr[i]);
     }
-    cout << "\nThe time spent without busy waiting "  << getTime() << endl;
+    cout << "\nThe time spent - "  << getTime() << endl;
     /*
      * Show the value of COUNTER only if -1 was supplied.
      */
     if(COUNTER == NUM_THREADS){
-        cout << "\nCOUNTER : " << COUNTER; }
+        cout << "\nCOUNTER : " << COUNTER << endl; }
 
-    cout << "********************************************************\n\n";
+    cout << "-----------------------------------------------------\n\n";
 
 
 
