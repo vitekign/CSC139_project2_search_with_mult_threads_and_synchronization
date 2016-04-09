@@ -3,12 +3,49 @@
 #include <random>
 using namespace std;
 
+
+/**
+ * stackoverflow - good explanation of VOLATILE
+ *
+ * If two threads are both reading and writing to a shared variable, then using the
+ * volatile keyword for that is not enough. You need to use synchronization in that
+ * case to guarantee that the reading and writing of the variable is atomic.
+ *
+ * But in case one thread reads and writes the value of a volatile variable,
+ * and other threads only read the variable, then the reading threads are guaranteed
+ * to see the latest value written to the volatile variable. Without making the
+ * variable volatile, this would not be guaranteed.
+ *
+ * Performance considerations of using volatile:
+ *
+ * Reading and writing of volatile variables causes the variable to be read or written
+ * to main memory. Reading from and writing to main memory is more expensive than
+ * accessing the CPU cache. Accessing volatile variables also prevent instruction
+ * reordering which is a normal performance enhancement technique. Thus, you should
+ * only use volatile variables when you really need to enforce visibility of variables.
+ */
+
+
+/*
+ * Global variables
+ */
+
 int *arr;
 long gRefTime;
-int *found;
-int *done;
+/*
+ * volatile is needed here because there is no guarantee that the
+ * main thread will read the updated value and not the value from
+ * the cache
+ */
+volatile int *found;
+volatile int *done;
 
 pthread_mutex_t cout_without_conflict_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * condition_mutex guarantees the the thread will go a
+ * state of sleep until it has been signaled and put in a ready queue.
+ */
 pthread_mutex_t condition_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  condition_cond  = PTHREAD_COND_INITIALIZER;
 int COUNTER = 0;
@@ -88,7 +125,7 @@ void* thr_func(void *arg) {
 
     /*
      * cout is not thread safe. It's better to wrap
-     * it up with a mutex lock; however, if I do so
+     * it up with a mutex lock; however, if you do so
      * it will slow down the speed of finding the key.
      */
     // pthread_mutex_lock(&cout_without_conflict_mutex);
@@ -136,7 +173,7 @@ void* thr_func_with_mutex(void *arg) {
              pthread_cond_signal( &condition_cond );
         pthread_mutex_unlock( &condition_mutex );
     } else {
-        // in case if there is no key in the array [-1 was supplied]
+        // in case if there is no key in the array [-1 was entered]
         // lock a mutex
         // increase a counter
         // if counter == number of threads -> value not found in any of threads -> make a signal
@@ -235,7 +272,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "error: index of key cannot be greater than the number of all elements in array");
         return EXIT_FAILURE;
     }
-    if(ARRAY_SIZE > 100000000){
+    if(ARRAY_SIZE > 1000000000){
         fprintf(stderr, "error: the array size is too big");
         return EXIT_FAILURE;
     }
@@ -389,7 +426,7 @@ int main(int argc, char **argv)
   */
 
 
-    cout << "\n------ [3] MULT. THREADS - PARENT KEEPS CHEKCING - BUSY WAITING - NO SYNC. -------";
+    cout << "\n------ [3] MULT. THREADS - PARENT KEEPS CHECKING - BUSY WAITING - NO SYNC. -------";
     setTime();
 
     if(NUM_THREADS <= ARRAY_SIZE){
@@ -457,20 +494,6 @@ int main(int argc, char **argv)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     /*
     * 4. The parent waits on a semaphore that gets signaled by one of the children
      * either when that child finds the key or when all children have completed
@@ -511,10 +534,10 @@ int main(int argc, char **argv)
     }
 
     /*
-     * wait for condition_cond and unlock condition_mutex
+     *  simultaneously unlocks the mutex and begins
+     *  waiting for the condition variable to be signalled
      */
     pthread_cond_wait( &condition_cond, &condition_mutex );
-    // pthread_mutex_unlock( &condition_mutex );
 
     /*
      * Kill all threads after receiving the signal.
@@ -524,17 +547,32 @@ int main(int argc, char **argv)
     }
     cout << "\nThe time spent - "  << getTime() << endl;
     /*
-     * Show the value of COUNTER only if -1 was supplied.
+     * Show the value of COUNTER only if -1 was entered.
      */
     if(COUNTER == NUM_THREADS){
         cout << "\nCOUNTER : " << COUNTER << endl; }
 
     cout << "-----------------------------------------------------\n\n";
 
+    /*
+     Test Results
 
+     1. Array size = 100M, T = 2, index =-1
+     1.                   2.                 3.                  4.
+     72|76|81             31|38|45           39|37|39           33|33|44
 
+     2. Array size = 100M, T = 2, index = 1
+     1.                   2.                 3.                  4.
+     3|1|0                24|27|42           1|0|2               2|4|0
 
+     3. Array size = 100M, T = 2, index = 50M+1
+     1.                   2.                 3.                  4.
+     45|60|81             25|36|55           1|0|0               5|0|20
 
+     4. Array size = 100M, T=4, index =75M+1
+     1.                   2.                 3.                  4.
+     52|50|43|33|72       21|36|19|19|44     13|11|19|12|15      10|21|18|19|10
+     */
 
     return 0;
 }
