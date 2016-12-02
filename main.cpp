@@ -1,11 +1,12 @@
 #include <iostream>
 #include <sys/timeb.h>
 #include <random>
+
 using namespace std;
 
-
-/**
- * stackoverflow - good explanation of VOLATILE
+/* * * * * * * * * * * * * * * * *  THINK ABOUT CACHE  * * * * * * * * * * * * * * * * *
+ *
+ * stackoverflow - good explanation of VOLATILE:
  *
  * If two threads are both reading and writing to a shared variable, then using the
  * volatile keyword for that is not enough. You need to use synchronization in that
@@ -22,35 +23,28 @@ using namespace std;
  * to main memory. Reading from and writing to main memory is more expensive than
  * accessing the CPU cache. Accessing volatile variables also prevent instruction
  * reordering which is a normal performance enhancement technique. Thus, you should
- * only use volatile variables when you really need to enforce visibility of variables.
- */
+ * only use volatile variables when you really need to enforce visibility of variables */
 
+#define COUT_SAFE 0
 
-/*
- * Global variables
- */
-
+/*  Global variables */
 int *arr;
 long gRefTime;
-/*
- * volatile is needed here because there is no guarantee that the
- * main thread will read the updated value and not the value from
- * the cache
- */
+
+/* volatile is needed here because there is no guarantee that the
+ * main thread will fetch the updated value and not the value from
+ * the cache on the corresponding core*/
 volatile int *found;
 volatile int *done;
 
 pthread_mutex_t cout_without_conflict_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/*
- * condition_mutex guarantees the the thread will go a
- * state of sleep until it has been signaled and put in a ready queue.
- */
+/* condition_mutex guarantees the the thread will go to a
+ * state of sleep until it has been signaled and put in a ready queue. */
 pthread_mutex_t condition_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t  condition_cond  = PTHREAD_COND_INITIALIZER;
+pthread_cond_t condition_cond = PTHREAD_COND_INITIALIZER;
 int COUNTER = 0;
-int NUM_THREADS;
-
+int NUM_OF_THREADS;
 
 enum {
     NOT_FOUND,
@@ -63,56 +57,45 @@ enum {
 };
 
 typedef struct _thread_data_t {
-    int tid;
+    int thread_id;
     int low;
     int high;
     int value;
-} thread_data_t;
+} THREAD_DATA;
 
 
-long GetMilliSecondTime(struct timeb timeBuf)
-{
-    long mliScndTime;
-
-    mliScndTime = timeBuf.time;
-    mliScndTime *= 1000;
-    mliScndTime += timeBuf.millitm;
-    return mliScndTime;
+long GetMilliSecondTime(struct timeb timeBuf) {
+    long milliSecondTime;
+    milliSecondTime = timeBuf.time;
+    milliSecondTime *= 1000;
+    milliSecondTime += timeBuf.millitm;
+    return milliSecondTime;
 }
 
-long GetCurrentTime(void)
-{
-    long crntTime=0;
-
+long GetCurrentTime(void) {
+    long currentTime = 0;
     struct timeb timeBuf;
     ftime(&timeBuf);
-    crntTime = GetMilliSecondTime(timeBuf);
+    currentTime = GetMilliSecondTime(timeBuf);
 
-    return crntTime;
+    return currentTime;
 }
 
-void setTime(void)
-{
+void setTime(void) {
     gRefTime = GetCurrentTime();
 }
 
-long getTime(void)
-{
-    long crntTime = GetCurrentTime();
-
-    return (crntTime - gRefTime);
+long getTime(void) {
+    long currentTime = GetCurrentTime();
+    return (currentTime - gRefTime);
 }
 
-
-
-/**
- * 1  = success [element was found]
- * -1 = failure [element was not found]
- */
-int linearSearch(const int *arr, int const len, int const value ){
+/*  1  = success [element was found]
+ * -1 = failure [element was not found] */
+int linearSearch(const int *arr, int const len, int const value) {
     int i = 0;
-    while(i < len){
-        if(arr[i] == value){
+    while (i < len) {
+        if (arr[i] == value) {
             return 1;
         }
         i++;
@@ -120,93 +103,80 @@ int linearSearch(const int *arr, int const len, int const value ){
     return -1;
 }
 
-void* thr_func(void *arg) {
-    thread_data_t *data = (thread_data_t *) arg;
+void *thr_func(void *arg) {
+    THREAD_DATA *data = (THREAD_DATA *) arg;
 
-    /*
-     * cout is not thread safe. It's better to wrap
+    /* cout is not thread safe. It's better to wrap
      * it up with a mutex lock; however, if you do so
-     * it will slow down the speed of finding the key.
-     */
-    // pthread_mutex_lock(&cout_without_conflict_mutex);
-    (linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread " << data->tid) :
+     * it will slow down the speed of finding the key. */
+#if COUT_SAFE == 1
+    pthread_mutex_lock(&cout_without_conflict_mutex);
+#endif
+    (linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread "
+                                                                          << data->thread_id) :
     (cout << "");
-    /*(cout << "\nKey wasn't found in thread " << data->tid);*/
-    //pthread_mutex_unlock(&cout_without_conflict_mutex);
-
+#if COUT_SAFE == 1
+    pthread_mutex_unlock(&cout_without_conflict_mutex);
+#endif
 }
 
-
-
-void* thr_func_real_busy_waiting(void *arg) {
-    thread_data_t *data = (thread_data_t *) arg;
-
+void *thr_func_real_busy_waiting(void *arg) {
+    THREAD_DATA *data = (THREAD_DATA *) arg;
     int success;
-    (success = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread " << data->tid) :
+    (success = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread "
+                                                                                    << data->thread_id) :
     (cout << "");
-
-    if(success){
-        found[data->tid] = FOUND;
+    /* Mark if the value was found */
+    if (success) {
+        found[data->thread_id] = FOUND;
     } else {
-        done[data->tid] = DONE;
+        done[data->thread_id] = DONE;
     }
-
 }
 
-void* thr_func_with_mutex(void *arg) {
-
+void *thr_func_with_mutex(void *arg) {
     int flag;
-
-    thread_data_t *data = (thread_data_t *) arg;
-
-    // pthread_mutex_lock(&cout_without_conflict_mutex);
-    (flag = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread " << data->tid) :
+    THREAD_DATA *data = (THREAD_DATA *) arg;
+    (flag = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread "
+                                                                                 << data->thread_id) :
     (cout << "");
-    //(cout << "\nKey wasn't found in thread " << data->tid);
 
-    /*
-     * If the key has been found. Unlock the mutex lock
-     * and signal the main thread.
-     */
-    if(flag==1){
-        pthread_mutex_lock( &condition_mutex );
-             pthread_cond_signal( &condition_cond );
-        pthread_mutex_unlock( &condition_mutex );
+    /* If the key has been found. Unlock the mutex and signal the main thread. */
+    if (flag == 1) {
+        pthread_mutex_lock(&condition_mutex);
+        pthread_cond_signal(&condition_cond);
+        pthread_mutex_unlock(&condition_mutex);
     } else {
-        // in case if there is no key in the array [-1 was entered]
-        // lock a mutex
-        // increase a counter
-        // if counter == number of threads -> value not found in any of threads -> make a signal
-        pthread_mutex_lock( &condition_mutex );
-                COUNTER++;
-                if(COUNTER == NUM_THREADS){
-                    pthread_cond_signal( &condition_cond );
-                }
-        pthread_mutex_unlock( &condition_mutex );
+        /* in case if there is no key in the array [-1 was entered]
+         * lock a mutex
+         * increase a counter
+         * if counter == number of threads -> value not found in any of threads -> make a signal */
+        pthread_mutex_lock(&condition_mutex);
+        COUNTER++;
+        if (COUNTER == NUM_OF_THREADS) {
+            pthread_cond_signal(&condition_cond);
+        }
+        pthread_mutex_unlock(&condition_mutex);
     }
 }
 
 
-/**
- * low inclusive [
- * high exclusive )
- */
-void populateArrayWithRandomInt( int *&data,  const int len, int const low, int const high){
-
-    data = (int*)calloc((size_t)len, sizeof(int));
+/* low inclusive [
+ * high exclusive )  */
+void populateArrayWithRandomInt(int *&data, const int len, int const low, int const high) {
+    data = (int *) calloc((size_t) len, sizeof(int));
     int temp = 0;
-    while( temp < len){
-        *(data+temp) = (rand()%(high-low)+low);
-        //  *(data+temp) = rand();
+    while (temp < len) {
+        *(data + temp) = (rand() % (high - low) + low);
         temp++;
     }
 }
 
-int findNumberOfIdenticalValues(int *arr, const int len, const int value){
+int findNumberOfIdenticalValues(int *arr, const int len, const int value) {
     int i = 0;
     int counter = 0;
-    while(i < len){
-        if(arr[i] == value){
+    while (i < len) {
+        if (arr[i] == value) {
             counter++;
         }
         i++;
@@ -214,11 +184,14 @@ int findNumberOfIdenticalValues(int *arr, const int len, const int value){
     return counter;
 }
 
-void getRidOfKeyDuplicates(int *arr, const int len, const int index){
+
+/* * * * * Make Sure That There Is No Duplicates In The Array * * * * * * */
+
+void getRidOfKeyDuplicates(int *arr, const int len, const int index) {
     int i = 0;
-    while(i < index){
-        if(arr[i] == arr[index]){
-            while(arr[i] == arr[index]){
+    while (i < index) {
+        if (arr[i] == arr[index]) {
+            while (arr[i] == arr[index]) {
                 arr[i] = rand();
             }
         }
@@ -226,11 +199,11 @@ void getRidOfKeyDuplicates(int *arr, const int len, const int index){
     }
 }
 
-void getRidOfKeyDuplicatesInWholeArray(int *arr, const int len, const int indexOfKey){
+void getRidOfKeyDuplicatesInWholeArray(int *arr, const int len, const int indexOfKey) {
     int i = 0;
-    while(i < len){
-        if(arr[i] == arr[indexOfKey] && i != indexOfKey){
-            while(arr[i] == arr[indexOfKey]){
+    while (i < len) {
+        if (arr[i] == arr[indexOfKey] && i != indexOfKey) {
+            while (arr[i] == arr[indexOfKey]) {
                 arr[i] = rand();
             }
         }
@@ -238,11 +211,11 @@ void getRidOfKeyDuplicatesInWholeArray(int *arr, const int len, const int indexO
     }
 }
 
-void replaceWithRandomVariable(int *arr, const int len, const int value){
+void replaceWithRandomVariable(int *arr, const int len, const int value) {
     int i = 0;
-    while(i < len){
-        if(arr[i] == value){
-            while(arr[i] == value){
+    while (i < len) {
+        if (arr[i] == value) {
+            while (arr[i] == value) {
                 arr[i] = rand();
             }
         }
@@ -250,313 +223,252 @@ void replaceWithRandomVariable(int *arr, const int len, const int value){
     }
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
 
     int VALUE_OF_KEY;
-    if(argc < 3){
+    if (argc < 3) {
         cerr << "Please enter | array size [int between 1 and 100 000 000 | number of threads "
                 " |\n index where the key will be found ";
         return -1;
     }
 
     const int ARRAY_SIZE = atoi(argv[1]);
-    NUM_THREADS = atoi(argv[2]);
-    const int INDEX_OF_KEY =  atoi(argv[3]);
+    NUM_OF_THREADS = atoi(argv[2]);
+    const int INDEX_OF_KEY = atoi(argv[3]);
 
-    if(NUM_THREADS > ARRAY_SIZE){
+    if (NUM_OF_THREADS > ARRAY_SIZE) {
         fprintf(stderr, "error: too few elements for too many threads");
         return EXIT_FAILURE;
     }
-    if(INDEX_OF_KEY > ARRAY_SIZE){
+    if (INDEX_OF_KEY > ARRAY_SIZE) {
         fprintf(stderr, "error: index of key cannot be greater than the number of all elements in array");
         return EXIT_FAILURE;
     }
-    if(ARRAY_SIZE > 1000000000){
+    if (ARRAY_SIZE > 1000000000) {
         fprintf(stderr, "error: the array size is too big");
         return EXIT_FAILURE;
     }
 
 
     int **indices;
-    indices = (int**)(calloc((size_t)NUM_THREADS, sizeof(int*)));
-    for(int i = 0; i<NUM_THREADS; i++){
-        indices[i] = (int*)calloc(2, sizeof(int));
+    indices = (int **) (calloc((size_t) NUM_OF_THREADS, sizeof(int *)));
+    for (int i = 0; i < NUM_OF_THREADS; i++) {
+        indices[i] = (int *) calloc(2, sizeof(int));
     }
-    done = (int*)(calloc((size_t)NUM_THREADS, sizeof(int)));
-    found = (int*)(calloc((size_t)NUM_THREADS, sizeof(int)));
+    done = (int *) (calloc((size_t) NUM_OF_THREADS, sizeof(int)));
+    found = (int *) (calloc((size_t) NUM_OF_THREADS, sizeof(int)));
 
 
     populateArrayWithRandomInt(arr, ARRAY_SIZE, 0, ARRAY_SIZE);
-    if (INDEX_OF_KEY == -1){
+    if (INDEX_OF_KEY == -1) {
         VALUE_OF_KEY = 0;
-        replaceWithRandomVariable(arr,ARRAY_SIZE, VALUE_OF_KEY);
+        replaceWithRandomVariable(arr, ARRAY_SIZE, VALUE_OF_KEY);
     } else {
         VALUE_OF_KEY = arr[INDEX_OF_KEY];
     }
 
     cout << "\n------------- ARGUMENTS -----------------\n";
     cout << "number of elements\t\t" << ARRAY_SIZE;
-    cout << "\nnumber of threads\t\t" << NUM_THREADS;
+    cout << "\nnumber of threads\t\t" << NUM_OF_THREADS;
     cout << "\nindex of the key\t\t" << INDEX_OF_KEY << "\n";
-    cout << "-----------------------------------------\n\n";
+    cout << "-----------------------------------------";
 
-    /*
-     * Get rif of duplicates
-     */
+    /* * * * * * * * *  Get rif of duplicates * * * * * * * * * * */
     cout << "\n---------- GETTING RID OF KEY DUPLICATES ----------\n";
     cout << "The value of the key appears in the array " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
-    << " time[s]" <<  endl;
+         << " time[s]" << endl;
     getRidOfKeyDuplicatesInWholeArray(arr, ARRAY_SIZE, INDEX_OF_KEY);
     cout << "The value of the key appears in the array " << (findNumberOfIdenticalValues(arr, ARRAY_SIZE, VALUE_OF_KEY))
-    << " time[s]" <<  endl;
+         << " time[s]" << endl;
     cout << "---------------------------------------------------\n\n";
 
-    /*
-     * ONE THREAD PART
-     */
-    cout << "\n------ [1] SEARCH WITH ONLY MAIN THREAD -------\n";
-    setTime();
-    (linearSearch(arr, ARRAY_SIZE,VALUE_OF_KEY)) == 1 ? (cout << "Key was found") : (cout << "Key wasn't found");
-    cout << "\nThe time spent - "  << getTime() << endl;
-    cout << "-----------------------------------------------\n\n";
 
-    /*
-    * MULTIPLE THREADS - THE PARENT WAITS FOR ALL THREADS TO FINISH
-    */
-    cout << "\n------ [2] MULT. THREADS - PARENT WAITS FOR ALL CHILDREN -------";
+    /* * * * *  Separate array into virtual divisions * * * * * * * * */
     int low;
-    int pivot = ARRAY_SIZE / NUM_THREADS;
-    for (int i = 0, j = 1; i < NUM_THREADS; i++, j++) {
+    int pivot = ARRAY_SIZE / NUM_OF_THREADS;
+    for (int i = 0, j = 1; i < NUM_OF_THREADS; i++, j++) {
         low = i * pivot;
-        /*
-         * This case is only for the cases when division
+        /* This case is only for the cases when division
          * of elements in the array by the number of threads
          * doesn't produce equal sections
          *
          * 11 elements and 4 threads
          * 11/4 = 3
-         * 0-2 3-5 6-8 9-the rest of the array
-         *
-         */
-        if (i == NUM_THREADS - 1) {
-                indices[i][0] = low;
-                indices[i][1] = ARRAY_SIZE%(NUM_THREADS) + pivot;
+         * 0-2 3-5 6-8 9-the rest of the array */
+        if (i == NUM_OF_THREADS - 1) {
+            indices[i][0] = low;
+            indices[i][1] = ARRAY_SIZE % (NUM_OF_THREADS) + pivot;
         } else {
-            /*
-             * In case of an array with 20 elements and 4 threads
+            /* In case of an array with 20 elements and 4 threads
              * 0-4 5-9 10-14 15-19
              *
-             * pivot = 20 / 4 = 5
-             */
-                indices[i][0] = low;
-                indices[i][1] = pivot;
+             * pivot = 20 / 4 = 5 */
+            indices[i][0] = low;
+            indices[i][1] = pivot;
         }
     }
 
-    /*
-     * Go through each sub-array and get rid of
-     * all duplicates, which might occur before the
-     * key.
-     */
-    /*
-    if (INDEX_OF_KEY != -1){
-        int numElementOneThread = ARRAY_SIZE / NUM_THREADS;
-        int INDEX_KEY_SUB_ARRAY = INDEX_OF_KEY % numElementOneThread;
-        for(int i = 0; i < NUM_THREADS; i++){
-            getRidOfKeyDuplicates(&arr[indices[i][0]], ARRAY_SIZE, INDEX_KEY_SUB_ARRAY);
-        }
-    }
-    */
 
-    pthread_t thr[NUM_THREADS];
+    /* * * * * * * * * *    ONE THREAD, PART [1]   * * * * * * * * * * * * * */
+    cout << "\n------ [1] SEARCH WITH ONLY MAIN THREAD -------\n";
+    setTime();
+    (linearSearch(arr, ARRAY_SIZE, VALUE_OF_KEY)) == 1 ? (cout << "Key was found") : (cout << "Key wasn't found");
+    cout << "\nThe time spent - " << getTime() << endl;
+    cout << "-----------------------------------------------\n\n";
+
+
+
+    /* * * * * *   MULTIPLE THREADS, PART [2] - THE PARENT WAITS FOR ALL CHILDREN[THREADS] TO FINISH   * * * * * *
+     * A synchronous way of running a parent with multiple kids:
+     *   A parent creates several threads, gives them specific tasks,
+     *   and waits until all of them are completed. */
+    cout << "\n------ [2] MULTIPLE THREADS - PARENT WAITS FOR ALL CHILDREN -------";
+    /* Make all required preparations and fire multiple threads */
+    pthread_t thr[NUM_OF_THREADS];
     int rc;
-    /*
-     * create a thread_data_t argument array
-     */
-    thread_data_t thr_data[NUM_THREADS];
-    /*
-     * create threads
-     */
+    THREAD_DATA thr_data[NUM_OF_THREADS];
     setTime();
 
-    if(NUM_THREADS <= ARRAY_SIZE){
-        for(int i = 0; i < NUM_THREADS; i++){
+    if (NUM_OF_THREADS <= ARRAY_SIZE) {
+        for (int i = 0; i < NUM_OF_THREADS; i++) {
 
             thr_data[i].low = indices[i][0];
             thr_data[i].high = indices[i][1];
             thr_data[i].value = VALUE_OF_KEY;
 
-            thr_data[i].tid = i;
+            thr_data[i].thread_id = i;
             /* --Signature of the function--
-             *
-             * int pthread_create(pthread_t *thread, pthread_attr_t *attr,
-                       void *(*start_routine)(void *), void *arg);
-             */
+             * int pthread_create(pthread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void *), void *arg); */
             rc = pthread_create(&thr[i], NULL, thr_func, &thr_data[i]);
-            if(rc > 0){
+            if (rc > 0) {
                 fprintf(stderr, "error: pthread_create, rc: %d\n", rc);
                 return EXIT_FAILURE;
             }
         }
-    }else {
+    } else {
         cout << "Too many threads for too few elements";
     }
 
-    /*
-     * block until all threads complete
-     * */
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    /* block until all threads come back home */
+    for (int i = 0; i < NUM_OF_THREADS; ++i) {
         pthread_join(thr[i], NULL);
     }
-    cout << "\nThe time spent - "  << getTime() << endl;
-    cout << "----------------------------------------------------------------\n\n";
+    cout << "\nThe time spent - " << getTime() << endl;
+    cout << "-------------------------------------------------------------------\n\n";
 
 
 
-
-
-
-
-
-  /*
-  * 3. The parent keeps checking on the children in a busy waiting loop and
-   * terminates as soon as one child finds the key or if all children complete
-   * their search without finding the key
-  */
-
-
-    cout << "\n------ [3] MULT. THREADS - PARENT KEEPS CHECKING - BUSY WAITING - NO SYNC. -------";
+    /* * * * * * * * * *   MULTIPLE THREADS, PART[3] - PARENT KEEPS CHECKING - BUSY WAITING - NO SYNC.    * * * * * *
+     * The parent keeps checking on the children in a busy waiting loop and
+     * terminates as soon as one child finds the key or if all children complete
+     * their search without finding the key */
+    cout << "\n------ [3] MULTIPLE. THREADS - PARENT KEEPS CHECKING - BUSY WAITING - NO SYNC. -------";
     setTime();
 
-    if(NUM_THREADS <= ARRAY_SIZE){
-        for(int i = 0; i < NUM_THREADS; i++){
-
+    if (NUM_OF_THREADS <= ARRAY_SIZE) {
+        for (int i = 0; i < NUM_OF_THREADS; i++) {
             thr_data[i].low = indices[i][0];
             thr_data[i].high = indices[i][1];
             thr_data[i].value = VALUE_OF_KEY;
 
-
-            thr_data[i].tid = i;
+            thr_data[i].thread_id = i;
             /* --Signature of the function--
-             *
-             * int pthread_create(pthread_t *thread, pthread_attr_t *attr,
-                       void *(*start_routine)(void *), void *arg);
-             */
+             * int pthread_create(pthread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void *), void *arg); */
             rc = pthread_create(&thr[i], NULL, thr_func_real_busy_waiting, &thr_data[i]);
-            if(rc > 0){
+            if (rc > 0) {
                 fprintf(stderr, "error: pthread_create, rc: %d\n", rc);
                 return EXIT_FAILURE;
             }
         }
-    }else {
+    } else {
         cout << "Too many threads for too few elements";
     }
 
-    /*
-     * block until all threads complete
-     * incorporate it into a function and then return instead of breaking
-     * */
+    /* BUSY WAITING: block until all threads complete */
     int counterDone = 0;
     int flag = true;
-    while(flag){
-        for(int i = 0; i < NUM_THREADS; i++){
-            if(found[i] == FOUND){
+    while (flag) {
+        for (int i = 0; i < NUM_OF_THREADS; i++) {
+            if (found[i] == FOUND) {
                 flag = false;
                 break;
             }
         }
-        for(int i = 0; i < NUM_THREADS; i++){
-            if(done[i] == DONE){
+        counterDone = 0;
+        for (int i = 0; i < NUM_OF_THREADS; i++) {
+            if (done[i] == DONE) {
                 counterDone++;
             }
-            if(counterDone == NUM_THREADS){
+            if (counterDone == NUM_OF_THREADS) {
                 flag = false;
                 break;
             }
         }
     }
 
-
-    if (counterDone == NUM_THREADS){
-        for (int i = 0; i < NUM_THREADS; ++i) {
+    if (counterDone == NUM_OF_THREADS) {
+        for (int i = 0; i < NUM_OF_THREADS; ++i) {
             pthread_join(thr[i], NULL);
         }
     } else {
-        for (int i = 0; i < NUM_THREADS; ++i) {
+        for (int i = 0; i < NUM_OF_THREADS; ++i) {
             pthread_cancel(thr[i]);
         }
     }
-
-    cout << "\nThe time spent - "  << getTime() << endl;
-    cout << "----------------------------------------------------------------------------------\n\n";
-
+    cout << "\nThe time spent - " << getTime() << endl;
+    cout << "--------------------------------------------------------------------------------------\n\n";
 
 
-
-    /*
-    * 4. The parent waits on a semaphore that gets signaled by one of the children
+    /*  MULTIPLE THREADS WITH SYNCHRONIZATION, PART[4]
+     * The parent waits on a semaphore that gets signaled by one of the children
      * either when that child finds the key or when all children have completed
-     * their search without finding the key.
-    */
-    cout << "\n------ [4] MULT. THREADS WITH SYNCRONIZATION --------";
-
+     * their search without finding the key. */
+    cout << "\n------ [4] MULTIPLE THREADS WITH SYNCHRONIZATION --------";
     setTime();
 
-    /*
-     * A lock must be used here in order to prevent the scenario
+    /* A lock must be used here in order to prevent the scenario
      * when one of the threads finishes its job and signals the
-     * condition mutex which wasn't yet locked in the main thread.
-     */
-    pthread_mutex_lock( &condition_mutex );
+     * condition mutex which wasn't yet locked in the main thread. */
+    pthread_mutex_lock(&condition_mutex);
 
-    if(NUM_THREADS <= ARRAY_SIZE){
-        for(int i = 0; i < NUM_THREADS; i++){
+    if (NUM_OF_THREADS <= ARRAY_SIZE) {
+        for (int i = 0; i < NUM_OF_THREADS; i++) {
 
             thr_data[i].low = indices[i][0];
             thr_data[i].high = indices[i][1];
             thr_data[i].value = VALUE_OF_KEY;
+            thr_data[i].thread_id = i;
 
-            thr_data[i].tid = i;
             /* --Signature of the function--
-             *
-             * int pthread_create(pthread_t *thread, pthread_attr_t *attr,
-                       void *(*start_routine)(void *), void *arg);
-             */
+             * int pthread_create(pthread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void *), void *arg); */
             rc = pthread_create(&thr[i], NULL, thr_func_with_mutex, &thr_data[i]);
-            if(rc > 0){
+            if (rc > 0) {
                 fprintf(stderr, "error: pthread_create, rc: %d\n", rc);
                 return EXIT_FAILURE;
             }
         }
-    }else {
+    } else {
         cout << "Too many threads for too few elements";
     }
 
-    /*
-     *  simultaneously unlocks the mutex and begins
-     *  waiting for the condition variable to be signalled
-     */
-    pthread_cond_wait( &condition_cond, &condition_mutex );
+    /*  Simultaneously unlocks the mutex and begins
+     *  waiting for the condition variable to be signalled */
+    pthread_cond_wait(&condition_cond, &condition_mutex);
 
-    /*
-     * Kill all threads after receiving the signal.
-     */
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    /* Kill all threads after receiving the signal. */
+    for (int i = 0; i < NUM_OF_THREADS; ++i) {
         pthread_cancel(thr[i]);
     }
-    cout << "\nThe time spent - "  << getTime() << endl;
+    cout << "\nThe time spent - " << getTime() << endl;
+    /* Show the value of COUNTER only if -1 was entered. */
+    if (COUNTER == NUM_OF_THREADS) {
+        cout << "\nCOUNTER : " << COUNTER << endl;
+    }
+
+    cout << "----------------------------------------------------------\n\n";
+
+    /* * * * * * * * * * * * * * * *  Test Results * * * * * * * * * * * * * * * *
     /*
-     * Show the value of COUNTER only if -1 was entered.
-     */
-    if(COUNTER == NUM_THREADS){
-        cout << "\nCOUNTER : " << COUNTER << endl; }
-
-    cout << "-----------------------------------------------------\n\n";
-
-    /*
-     Test Results
-
      1. Array size = 100M, T = 2, index =-1
      1.                   2.                 3.                  4.
      72|76|81             31|38|45           39|37|39           33|33|44
@@ -576,6 +488,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
-
-
