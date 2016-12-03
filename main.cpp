@@ -134,32 +134,6 @@ void *thr_func_real_busy_waiting(void *arg) {
     }
 }
 
-void *thr_func_with_mutex(void *arg) {
-    int flag;
-    THREAD_DATA *data = (THREAD_DATA *) arg;
-    (flag = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread "
-                                                                                 << data->thread_id) :
-    (cout << "");
-
-    /* If the key has been found. Unlock the mutex and signal the main thread. */
-    if (flag == 1) {
-        pthread_mutex_lock(&condition_mutex);
-        pthread_cond_signal(&condition_cond);
-        pthread_mutex_unlock(&condition_mutex);
-    } else {
-        /* in case if there is no key in the array [-1 was entered]
-         * lock a mutex
-         * increase a counter
-         * if counter == number of threads -> value not found in any of threads -> make a signal */
-        pthread_mutex_lock(&condition_mutex);
-        COUNTER++;
-        if (COUNTER == NUM_OF_THREADS) {
-            pthread_cond_signal(&condition_cond);
-        }
-        pthread_mutex_unlock(&condition_mutex);
-    }
-}
-
 
 /* low inclusive [
  * high exclusive )  */
@@ -222,6 +196,44 @@ void replaceWithRandomVariable(int *arr, const int len, const int value) {
         i++;
     }
 }
+
+/* * * * * * * * * * * The Most Interesting Part * * * * * * * * * * * * */
+void *thr_func_with_mutex(void *arg) {
+    int flag;
+    THREAD_DATA *data = (THREAD_DATA *) arg;
+    (flag = linearSearch(&arr[data->low], data->high, data->value)) == 1 ? (cout << "\nKey was found in thread "
+                                                                                 << data->thread_id) :
+    (cout << "");
+
+    /* If the key has been found. Unlock the mutex and signal the main thread. */
+    if (flag == 1) {
+        /* ! IMPORTANT !
+         * condition_cond must be wrapped in a mutex lock, so it guarantees that the parent thread goes to sleep first
+         * and only and only after that the current thread can signal so the parent wakes up.
+         *
+         * If this check is omitted, then there exists a real chance of the following deadlock:
+         *  1. Parent fires the current thread
+         *  2. Current thread does its job while the parent is launching other threads or consumed with other tasks
+         *  3. The current thread signals the parent, but the parent is not sleeping, so the signal ends up being
+         *     useless, without achieving its initial task.
+         *  4. This scenario leads to a complete deadlock, in which the parent is never woken up*/
+        pthread_mutex_lock(&condition_mutex);
+        pthread_cond_signal(&condition_cond);
+        pthread_mutex_unlock(&condition_mutex);
+    } else {
+        /* In case if there is no key in the array [-1 was entered]
+         *  1. lock a mutex
+         *  2. increase a counter
+         *  3. if counter == number of threads -> value not found in any of threads -> make a signal */
+        pthread_mutex_lock(&condition_mutex);
+        COUNTER++;
+        if (COUNTER == NUM_OF_THREADS) {
+            pthread_cond_signal(&condition_cond);
+        }
+        pthread_mutex_unlock(&condition_mutex);
+    }
+}
+
 
 int main(int argc, char **argv) {
 
@@ -428,7 +440,8 @@ int main(int argc, char **argv) {
 
     /* A lock must be used here in order to prevent the scenario
      * when one of the threads finishes its job and signals the
-     * condition mutex which wasn't yet locked in the main thread. */
+     * condition mutex which wasn't yet locked in the main thread,
+     * which means that the main thread wasn't sleeping yet*/
     pthread_mutex_lock(&condition_mutex);
 
     if (NUM_OF_THREADS <= ARRAY_SIZE) {
